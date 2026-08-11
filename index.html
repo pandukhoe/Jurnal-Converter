@@ -199,11 +199,8 @@
         <label>Nama Customer (kolom *Customer)</label>
         <input type="text" id="customerName" value="SHOPEE KOKIKO">
       </div>
-      <div class="field">
-        <label>Sertakan status "Belum Bayar"?</label>
-        <div class="checkrow"><input type="checkbox" id="includeUnpaid" checked> <span style="color:var(--ink-soft); font-size:12.5px;">Ikut masuk sheet Invoice (biasanya belum lunas)</span></div>
-      </div>
     </div>
+    <p class="hint" style="margin:12px 0 0;">Pesanan berstatus <b>Belum Bayar</b> dan <b>Batal</b> otomatis dikecualikan dari sheet Invoice. Batal tetap masuk sheet &amp; draft WA terpisah di bawah.</p>
   </div>
 
   <!-- STEP 2A: PRODUCT LIST UPLOAD (independent, bisa kapan saja) -->
@@ -219,16 +216,31 @@
     <input type="file" id="mapFileInput" accept=".xlsx,.xls,.csv">
     <div id="mapFilePillHolder" style="margin-top:10px;"></div>
     <div id="storageNote" style="margin-top:10px; font-size:12px; color:var(--ink-soft);"></div>
+
+    <hr class="divider">
+
+    <label style="margin-bottom:6px;">Master data produk (opsional)</label>
+    <p class="hint" style="margin-top:0;">Upload laporan produk dari Jurnal (mis. "Nilai Stok Gudang") supaya nama produk yang diisi selalu cocok persis dengan yang terdaftar resmi — dipakai untuk autocomplete & saran otomatis di tabel pencocokan.</p>
+    <div id="masterDropzone" class="drop" style="padding:20px;">
+      <span class="ic">🗂️</span>
+      <b>Tarik & lepas laporan produk Jurnal di sini, atau klik untuk pilih file</b>
+      <div class="small">Format: .xlsx / .xls — kolom "Kode Produk" &amp; "Nama Produk" dideteksi otomatis</div>
+    </div>
+    <input type="file" id="masterFileInput" accept=".xlsx,.xls,.csv">
+    <div id="masterFilePillHolder" style="margin-top:10px;"></div>
   </div>
 
   <!-- STEP 2B: MAPPING TABLE (butuh file pesanan sudah diupload) -->
   <div class="card" id="mapCard" style="display:none;">
     <h2>3. Cocokkan nama produk ke nama template</h2>
-    <p class="hint">Kolom kiri = nama produk asli dari Shopee (dari file pesanan). Kolom kanan otomatis terisi kalau sudah cocok dengan daftar produk di atas — sisanya bisa diisi manual.</p>
+    <p class="hint">Kolom kiri = nama produk asli dari Shopee (dari file pesanan). Kolom kanan otomatis terisi kalau sudah cocok dengan daftar produk di atas — sisanya bisa diisi manual (autocomplete tersedia kalau master data Jurnal sudah diupload).</p>
 
     <div class="row" style="margin-bottom:12px;">
       <div class="field" style="flex:0 0 auto;">
         <button class="btn btn-ghost btn-sm" id="autoFillBtn">✓ Samakan semua kosong dengan nama asli</button>
+      </div>
+      <div class="field" style="flex:0 0 auto;">
+        <button class="btn btn-ghost btn-sm" id="suggestFromMasterBtn">🔎 Sarankan otomatis dari data Jurnal</button>
       </div>
     </div>
 
@@ -238,21 +250,22 @@
         <tbody id="mapTbody"></tbody>
       </table>
     </div>
+    <datalist id="masterProductList"></datalist>
   </div>
 
   <!-- STEP 3: RESULT PREVIEW -->
   <div class="card" id="resultCard" style="display:none;">
-    <h2>3. Ringkasan hasil convert</h2>
+    <h2>4. Ringkasan hasil convert</h2>
     <p class="hint">Pesanan batal otomatis dipisah ke sheet sendiri, plus draft pesan WA per pesanan.</p>
 
     <div class="statpills" id="statPills"></div>
 
-    <div class="section-title">Preview — Sheet Invoice</div>
+    <div class="section-title" id="invoiceTitle">Preview — Sheet Invoice (semua baris)</div>
     <div class="tablewrap">
       <table id="invoiceTable"><thead></thead><tbody></tbody></table>
     </div>
 
-    <div class="section-title">Preview — Sheet Batal</div>
+    <div class="section-title" id="batalTitle">Preview — Sheet Batal (semua baris)</div>
     <div class="tablewrap">
       <table id="batalTable"><thead></thead><tbody></tbody></table>
     </div>
@@ -270,8 +283,8 @@
 
   <!-- STEP 4: DOWNLOAD -->
   <div class="card" id="downloadCard" style="display:none;">
-    <h2>4. Download hasil convert</h2>
-    <p class="hint">File Excel berisi 2 sheet: <b>Invoice</b> (siap upload) dan <b>Batal</b> (arsip pesanan dibatalkan).</p>
+    <h2>5. Download hasil convert</h2>
+    <p class="hint">File Excel berisi sheet <b>Invoice</b> saja (siap upload) — pesanan <b>Belum Bayar</b> dan <b>Batal</b> tidak ikut diekspor. Preview pesanan batal & draft WA di atas tetap bisa dipakai untuk follow-up manual.</p>
     <div class="actions">
       <button class="btn btn-primary" id="downloadBtn">⬇️ Download Excel</button>
     </div>
@@ -304,6 +317,7 @@ const BATAL_HEADERS = ["No. Pesanan","Status Pesanan","Alasan Pembatalan","Nama 
 let rawRows = [];
 let productMap = {}; // original -> mapped
 let pendingMapRows = null; // canonical [{orig, mapped}] pairs, applied once raw file is loaded
+let masterProducts = []; // [{kode, nama}] official product list from Jurnal
 let validRows = [];
 let cancelledRows = [];
 let cancelledOrders = []; // grouped by order number
@@ -312,6 +326,7 @@ let batalOut = [];
 
 // ---------- persistent product-list storage (window.storage, when available) ----------
 const STORAGE_KEY = 'kokiko-shopee-product-mapping';
+const MASTER_STORAGE_KEY = 'kokiko-shopee-jurnal-master-products';
 const hasStorage = () => typeof window.storage !== 'undefined' && window.storage;
 
 async function saveMappingToStorage(entries){
@@ -336,11 +351,91 @@ async function clearMappingStorage(){
   try{ await window.storage.delete(STORAGE_KEY, false); }catch(err){ /* ignore */ }
 }
 
+async function saveMasterToStorage(list){
+  if(!hasStorage()) return false;
+  try{
+    await window.storage.set(MASTER_STORAGE_KEY, JSON.stringify(list), false);
+    return true;
+  }catch(err){ console.error('Gagal menyimpan master produk:', err); return false; }
+}
+
+async function loadMasterFromStorage(){
+  if(!hasStorage()) return null;
+  try{
+    const res = await window.storage.get(MASTER_STORAGE_KEY, false);
+    if(res && res.value) return JSON.parse(res.value);
+    return null;
+  }catch(err){ return null; }
+}
+
+async function clearMasterStorage(){
+  if(!hasStorage()) return;
+  try{ await window.storage.delete(MASTER_STORAGE_KEY, false); }catch(err){ /* ignore */ }
+}
+
 function entriesFromProductMap(){
   return Object.keys(productMap).filter(k => productMap[k]).map(k => ({orig:k, mapped:productMap[k]}));
 }
 
-// ---------- date formatting: "2026-08-06 08:31" -> "6/8/2026" ----------
+// ---------- parse a Jurnal "Nilai Stok Gudang"-style report into {kode, nama} pairs ----------
+function parseMasterProductSheet(aoa){
+  // find header row: a row containing a cell that matches "Nama Produk"
+  let headerRowIdx = -1, namaColIdx = -1, kodeColIdx = 0;
+  for(let i=0;i<aoa.length;i++){
+    const row = aoa[i] || [];
+    const idx = row.findIndex(c => norm(c).toLowerCase() === 'nama produk');
+    if(idx !== -1){ headerRowIdx = i; namaColIdx = idx; break; }
+  }
+  if(headerRowIdx === -1){
+    // fallback: assume first two columns are kode/nama starting row 0
+    return aoa.filter(r => r && r[0] && r[1]).map(r => ({kode: norm(r[0]), nama: norm(r[1])}));
+  }
+  const headerRow = aoa[headerRowIdx];
+  const kIdx = headerRow.findIndex(c => norm(c).toLowerCase().includes('kode'));
+  if(kIdx !== -1) kodeColIdx = kIdx;
+
+  const out = [];
+  for(let i=headerRowIdx+1;i<aoa.length;i++){
+    const row = aoa[i] || [];
+    const kode = norm(row[kodeColIdx]);
+    const nama = norm(row[namaColIdx]);
+    if(!nama || !kode) continue;
+    if(kode.toLowerCase() === 'unassigned') continue;
+    if(nama.toUpperCase().replace(/\s/g,'') === 'TOTAL' || nama.toUpperCase().includes('T O T A L')) continue;
+    out.push({kode, nama});
+  }
+  return out;
+}
+
+// ---------- fuzzy matching helper for auto-suggest ----------
+function normTokens(s){
+  let t = norm(s).toUpperCase();
+  t = t.replace(/(\d),(\d)/g, '$1.$2'); // "3,5" -> "3.5" (decimal, not thousands here)
+  t = t.replace(/GRAM\b/g, 'GR').replace(/KILOGRAM\b/g, 'KG').replace(/LITER\b/g, 'L');
+  t = t.replace(/[^A-Z0-9.]/g, ' ');
+  return t.split(/\s+/).map(w => w.replace(/\.+$/,'')).filter(Boolean);
+}
+function bestMasterMatch(origName){
+  const origTokens = new Set(normTokens(origName));
+  if(!origTokens.size) return null;
+  let best = null, bestScore = 0;
+  masterProducts.forEach(p => {
+    const tks = normTokens(p.nama);
+    if(!tks.length) return;
+    const overlap = tks.filter(t => origTokens.has(t)).length;
+    const score = overlap / tks.length; // recall against the (shorter, canonical) master name
+    const strongEnough = tks.length === 1 ? overlap === 1 : score >= 0.65 && overlap >= 2;
+    if(strongEnough && score > bestScore){ bestScore = score; best = p; }
+  });
+  return best;
+}
+
+function renderMasterDatalist(){
+  const dl = $('masterProductList');
+  dl.innerHTML = masterProducts.map(p => `<option value="${escapeAttr(p.nama)}">`).join('');
+}
+
+
 function fmtDate(v){
   if(!v) return '';
   let d;
@@ -435,7 +530,7 @@ function renderMapTable(){
     const mapped = productMap[orig];
     tr.innerHTML = `
       <td>${escapeHtml(orig)}</td>
-      <td><input type="text" data-orig="${escapeAttr(orig)}" value="${escapeAttr(mapped)}" placeholder="nama sesuai template..."></td>
+      <td><input type="text" list="masterProductList" data-orig="${escapeAttr(orig)}" value="${escapeAttr(mapped)}" placeholder="nama sesuai template..."></td>
       <td>${mapped ? '<span class="tag ok">Terisi</span>' : '<span class="tag warn">Belum diisi</span>'}</td>
     `;
     tbody.appendChild(tr);
@@ -540,23 +635,102 @@ function applyMapEntries(entries){
   }
 })();
 
+// ---------- master product list (Jurnal) ----------
+const masterDropzone = $('masterDropzone');
+masterDropzone.addEventListener('click', () => $('masterFileInput').click());
+['dragenter','dragover'].forEach(ev => masterDropzone.addEventListener(ev, e => { e.preventDefault(); masterDropzone.classList.add('drag'); }));
+['dragleave','drop'].forEach(ev => masterDropzone.addEventListener(ev, e => { e.preventDefault(); masterDropzone.classList.remove('drag'); }));
+masterDropzone.addEventListener('drop', e => { if(e.dataTransfer.files.length) handleMasterFile(e.dataTransfer.files[0]); });
+$('masterFileInput').addEventListener('change', (e) => { if(e.target.files.length) handleMasterFile(e.target.files[0]); });
+
+function handleMasterFile(file){
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    const wb = XLSX.read(e.target.result, {type:'array', cellDates:true});
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const aoa = XLSX.utils.sheet_to_json(sheet, {header:1, defval:''});
+    const list = parseMasterProductSheet(aoa);
+    if(!list.length){
+      renderMasterPill(file.name, 'tidak ada produk terdeteksi — cek format file', false);
+      return;
+    }
+    masterProducts = list;
+    renderMasterDatalist();
+    renderMasterPill(file.name, `${list.length} produk resmi dimuat — dipakai untuk autocomplete & saran otomatis`, true);
+    if(rawRows.length) renderMapTable();
+    await saveMasterToStorage(list);
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function renderMasterPill(name, note, removable){
+  $('masterFilePillHolder').innerHTML = `<div class="filepill"><span>✓ ${escapeHtml(name)} — ${escapeHtml(note)}</span>${removable ? '<span class="rm" id="rmMasterFile">hapus</span>' : ''}</div>`;
+  if(removable){
+    $('rmMasterFile').onclick = async () => {
+      masterProducts = [];
+      renderMasterDatalist();
+      $('masterFilePillHolder').innerHTML = '';
+      await clearMasterStorage();
+    };
+  }
+}
+
+$('suggestFromMasterBtn').addEventListener('click', () => {
+  if(!masterProducts.length){
+    showStorageNote('Upload dulu master data produk dari Jurnal di Langkah 2 sebelum pakai saran otomatis.');
+    return;
+  }
+  let filled = 0;
+  Object.keys(productMap).forEach(orig => {
+    if(productMap[orig]) return; // sudah terisi, jangan timpa
+    const match = bestMasterMatch(orig);
+    if(match){ productMap[orig] = match.nama; filled++; }
+  });
+  renderMapTable();
+  processAndRender();
+  persistCurrentMapping();
+  showStorageNote(`🔎 ${filled} nama produk terisi otomatis dari master data Jurnal. Cek ulang sebelum export — kecocokan berbasis kemiripan kata, bukan pasti 100% benar.`);
+});
+
+// restore master product list from storage on load
+(async function restoreMasterProducts(){
+  const list = await loadMasterFromStorage();
+  if(list && list.length){
+    masterProducts = list;
+    renderMasterDatalist();
+    renderMasterPill('Master data produk tersimpan', `${list.length} produk dimuat dari penyimpanan browser`, true);
+  }
+})();
+
 function escapeHtml(s){ return (s||'').toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function escapeAttr(s){ return escapeHtml(s); }
 
+// ---------- number cleaning: "145.400" (dot as thousands separator) -> 145400 ----------
+function cleanNumber(v){
+  if(v === undefined || v === null || v === '') return 0;
+  if(typeof v === 'number') return Math.round(v);
+  let s = String(v).trim();
+  // strip everything except digits and a leading minus sign
+  s = s.replace(/\./g, '').replace(/,/g, '').replace(/[^\d-]/g, '');
+  const n = parseInt(s, 10);
+  return isNaN(n) ? 0 : n;
+}
+
 // ---------- core processing ----------
+let unpaidCount = 0;
 function processAndRender(){
   if(!rawRows.length) return;
   const customer = $('customerName').value || 'SHOPEE KOKIKO';
-  const includeUnpaid = $('includeUnpaid').checked;
 
   validRows = [];
   cancelledRows = [];
+  unpaidCount = 0;
 
   rawRows.forEach(r => {
     const status = norm(getVal(r,'Status Pesanan'));
     if(!status) return;
     if(status === 'Batal'){ cancelledRows.push(r); }
-    else if(status === 'Belum Bayar' && !includeUnpaid){ /* skip */ }
+    else if(status === 'Belum Bayar'){ unpaidCount++; /* dikecualikan dari laporan */ }
     else { validRows.push(r); }
   });
 
@@ -571,9 +745,9 @@ function processAndRender(){
     row['*DueDate'] = date;
     row['*InvoiceNumber'] = norm(getVal(r,'No. Pesanan'));
     row['*ProductName'] = mapped;
-    row['*Quantity'] = getVal(r,'Jumlah') || 0;
+    row['*Quantity'] = cleanNumber(getVal(r,'Jumlah'));
     row['*Unit'] = 'Pcs';
-    row['*UnitPrice'] = getVal(r,'Harga Setelah Diskon') || 0;
+    row['*UnitPrice'] = cleanNumber(getVal(r,'Harga Setelah Diskon'));
     return row;
   });
 
@@ -582,7 +756,7 @@ function processAndRender(){
     "Status Pesanan": norm(getVal(r,'Status Pesanan')),
     "Alasan Pembatalan": norm(getVal(r,'Alasan Pembatalan')),
     "Nama Produk": norm(getVal(r,'Nama Produk')),
-    "Jumlah": getVal(r,'Jumlah') || 0,
+    "Jumlah": cleanNumber(getVal(r,'Jumlah')),
     "Nama Penerima": norm(getVal(r,'Nama Penerima')),
     "No. Telepon": norm(getVal(r,'No. Telepon')),
     "Waktu Pesanan Dibuat": fmtDate(getVal(r,'Waktu Pesanan Dibuat'))
@@ -615,11 +789,12 @@ function renderResults(){
     <div class="stat ok"><div class="num">${validRows.length}</div><div class="lbl">Baris invoice</div></div>
     <div class="stat bad"><div class="num">${cancelledRows.length}</div><div class="lbl">Baris batal</div></div>
     <div class="stat"><div class="num">${new Set(validRows.map(r=>norm(getVal(r,'No. Pesanan')))).size}</div><div class="lbl">Pesanan valid</div></div>
+    <div class="stat"><div class="num">${unpaidCount}</div><div class="lbl">Belum bayar (dikecualikan)</div></div>
     <div class="stat ${unmapped ? 'warn' : ''}"><div class="num">${unmapped}</div><div class="lbl">Produk belum dipetakan</div></div>
   `;
 
-  renderTable('invoiceTable', TEMPLATE_HEADERS, invoiceOut.slice(0, 12));
-  renderTable('batalTable', BATAL_HEADERS, batalOut.slice(0, 12));
+  renderTable('invoiceTable', TEMPLATE_HEADERS, invoiceOut);
+  renderTable('batalTable', BATAL_HEADERS, batalOut);
 
   renderWaList();
 }
@@ -658,7 +833,6 @@ function renderWaList(){
 
 $('waTemplate').addEventListener('input', renderWaList);
 $('customerName').addEventListener('input', processAndRender);
-$('includeUnpaid').addEventListener('change', processAndRender);
 
 $('copyWaBtn').addEventListener('click', () => {
   const text = cancelledOrders.map(o => `No. ${o.no_pesanan}\n${buildWaText(o)}`).join('\n\n---\n\n');
@@ -677,9 +851,7 @@ $('copyWaBtn').addEventListener('click', () => {
 $('downloadBtn').addEventListener('click', () => {
   const wb = XLSX.utils.book_new();
   const wsInvoice = XLSX.utils.json_to_sheet(invoiceOut, {header: TEMPLATE_HEADERS});
-  const wsBatal = XLSX.utils.json_to_sheet(batalOut, {header: BATAL_HEADERS});
   XLSX.utils.book_append_sheet(wb, wsInvoice, 'Invoice');
-  XLSX.utils.book_append_sheet(wb, wsBatal, 'Batal');
   const today = new Date();
   const fname = `Invoice_Shopee_${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}.xlsx`;
   XLSX.writeFile(wb, fname);
