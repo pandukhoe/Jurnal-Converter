@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Konverter Pesanan Shopee → Invoice</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --bg: #f6f4ef;
+    --panel: #ffffff;
+    --ink: #1d1b16;
+    --ink-soft: #6b6459;
+    --line: #e6e1d6;
+    --shopee: #ee4d2d;
+    --shopee-dark: #c73e22;
+    --ok: #1f7a4d;
+    --ok-bg: #e8f5ee;
+    --warn: #b5750a;
+    --warn-bg: #fbf1de;
+    --bad: #b23a2e;
+    --bad-bg: #fceceb;
+    --mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1040px;margin:0 auto;padding:28px 20px 80px;}
+
+  .top{
+    display:flex; align-items:center; gap:14px; margin-bottom:6px;
+  }
+  .mark{
+    width:38px;height:38px;border-radius:10px;
+    background:linear-gradient(135deg,var(--shopee),var(--shopee-dark));
+    display:flex;align-items:center;justify-content:center;
+    color:#fff; font-weight:800; font-size:16px; flex-shrink:0;
+    box-shadow: 0 4px 10px rgba(238,77,45,0.25);
+  }
+  h1{font-size:21px; margin:0; letter-spacing:-0.01em;}
+  .sub{color:var(--ink-soft); font-size:13.5px; margin:2px 0 0;}
+  .top-text{display:flex; flex-direction:column;}
+
+  .steps{
+    display:flex; gap:8px; margin:26px 0 18px; flex-wrap:wrap;
+  }
+  .step-pill{
+    font-size:11.5px; font-weight:600; color:var(--ink-soft);
+    background:var(--panel); border:1px solid var(--line);
+    padding:5px 10px 5px 8px; border-radius:100px; display:flex; align-items:center; gap:6px;
+  }
+  .step-pill .n{
+    width:16px;height:16px;border-radius:50%;background:var(--line);color:var(--ink-soft);
+    font-size:10px; display:flex;align-items:center;justify-content:center; font-weight:700;
+  }
+  .step-pill.active{color:var(--shopee-dark); border-color:#f3c3b6; background:#fff5f2;}
+  .step-pill.active .n{background:var(--shopee); color:#fff;}
+  .step-pill.done{color:var(--ok); border-color:#bfe3cd; background:var(--ok-bg);}
+  .step-pill.done .n{background:var(--ok); color:#fff;}
+
+  .card{
+    background:var(--panel); border:1px solid var(--line); border-radius:14px;
+    padding:20px 22px; margin-bottom:16px;
+  }
+  .card h2{font-size:14.5px; margin:0 0 3px; letter-spacing:-0.01em;}
+  .card .hint{color:var(--ink-soft); font-size:12.5px; margin:0 0 14px; line-height:1.5;}
+
+  .drop{
+    border:1.5px dashed #d8cfc0; border-radius:12px; padding:30px 20px;
+    text-align:center; cursor:pointer; transition: all .15s ease;
+    background: repeating-linear-gradient(135deg, #fbfaf7, #fbfaf7 10px, #f8f6f1 10px, #f8f6f1 20px);
+  }
+  .drop:hover, .drop.drag{ border-color:var(--shopee); background:#fff6f4; }
+  .drop .ic{font-size:26px; margin-bottom:8px; display:block;}
+  .drop b{font-size:13.5px;}
+  .drop .small{font-size:11.5px; color:var(--ink-soft); margin-top:4px;}
+  input[type=file]{display:none;}
+
+  .filepill{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    background:var(--ok-bg); border:1px solid #bfe3cd; color:#0f5132;
+    border-radius:10px; padding:10px 14px; font-size:13px; font-weight:600;
+  }
+  .filepill .rm{cursor:pointer; color:#0f5132; opacity:.6; font-weight:400; font-size:12px; text-decoration:underline;}
+  .filepill .rm:hover{opacity:1;}
+
+  .row{display:flex; gap:14px; flex-wrap:wrap;}
+  .field{flex:1; min-width:180px;}
+  label{display:block; font-size:11.5px; font-weight:700; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; margin-bottom:6px;}
+  input[type=text], textarea, select{
+    width:100%; border:1px solid var(--line); border-radius:8px; padding:9px 11px;
+    font-size:13.5px; font-family:inherit; background:#fdfcfa; color:var(--ink);
+  }
+  input[type=text]:focus, textarea:focus{outline:2px solid #f3c3b6; border-color:var(--shopee);}
+  textarea{resize:vertical; line-height:1.5;}
+
+  .checkrow{display:flex; align-items:center; gap:8px; font-size:13px; margin-top:4px;}
+  .checkrow input{width:16px; height:16px;}
+
+  table{width:100%; border-collapse:collapse; font-size:12.5px;}
+  th{
+    text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.03em;
+    color:var(--ink-soft); border-bottom:1.5px solid var(--line); padding:7px 8px; white-space:nowrap;
+  }
+  td{padding:7px 8px; border-bottom:1px solid #f0ede4; vertical-align:top;}
+  tr:last-child td{border-bottom:none;}
+  .tablewrap{max-height:320px; overflow:auto; border:1px solid var(--line); border-radius:10px;}
+  .tablewrap table{margin:0;}
+  .tablewrap thead th{position:sticky; top:0; background:#fbfaf7; z-index:1;}
+
+  .maprow input{padding:6px 9px; font-size:12.5px;}
+  .maprow td{padding:5px 8px;}
+  .tag{display:inline-block; font-size:10px; font-weight:700; padding:2px 7px; border-radius:100px;}
+  .tag.warn{background:var(--warn-bg); color:var(--warn);}
+  .tag.ok{background:var(--ok-bg); color:var(--ok);}
+
+  .statpills{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px;}
+  .stat{
+    background:#fdfcfa; border:1px solid var(--line); border-radius:10px; padding:10px 16px; min-width:110px;
+  }
+  .stat .num{font-size:20px; font-weight:800; letter-spacing:-0.02em;}
+  .stat .lbl{font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; margin-top:1px;}
+  .stat.ok .num{color:var(--ok);}
+  .stat.bad .num{color:var(--bad);}
+  .stat.warn .num{color:var(--warn);}
+
+  .btn{
+    appearance:none; border:none; cursor:pointer; font-family:inherit; font-weight:700; font-size:13.5px;
+    padding:11px 18px; border-radius:9px; display:inline-flex; align-items:center; gap:8px;
+    transition: transform .08s ease, box-shadow .15s ease;
+  }
+  .btn:active{transform:scale(.98);}
+  .btn-primary{background:var(--shopee); color:#fff; box-shadow:0 4px 14px rgba(238,77,45,.28);}
+  .btn-primary:hover{background:var(--shopee-dark);}
+  .btn-primary:disabled{background:#e3ddd0; color:#a89f8e; box-shadow:none; cursor:not-allowed;}
+  .btn-ghost{background:#fff; border:1px solid var(--line); color:var(--ink);}
+  .btn-ghost:hover{border-color:#cfc7b6;}
+  .btn-sm{padding:7px 12px; font-size:12px; border-radius:7px;}
+
+  .actions{display:flex; gap:10px; flex-wrap:wrap; margin-top:16px;}
+
+  .empty{color:var(--ink-soft); font-size:12.5px; text-align:center; padding:22px 0;}
+
+  .wa-block{
+    background:#fdfcfa; border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:8px;
+    font-size:12.5px; white-space:pre-wrap; line-height:1.55; font-family: var(--mono);
+    position:relative;
+  }
+  .wa-block .waorder{font-family:inherit; font-weight:700; color:var(--shopee-dark); font-size:11px; text-transform:uppercase; letter-spacing:.03em; margin-bottom:5px; display:block;}
+
+  .section-title{font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.03em; color:var(--ink-soft); margin:22px 0 10px;}
+  .divider{border:none; border-top:1px solid var(--line); margin:18px 0;}
+
+  .placeholders{font-size:11.5px; color:var(--ink-soft); margin-top:6px; line-height:1.6;}
+  .placeholders code{background:#f2efe6; padding:1px 5px; border-radius:5px; font-family:var(--mono);}
+
+  footer{text-align:center; color:var(--ink-soft); font-size:11.5px; margin-top:30px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="top">
+    <div class="mark">S</div>
+    <div class="top-text">
+      <h1>Konverter Pesanan Shopee → Invoice</h1>
+      <p class="sub">Ubah file "Order All" Shopee jadi format invoice siap upload — otomatis, tanpa ubah data mentah.</p>
+    </div>
+  </div>
+
+  <div class="steps">
+    <div class="step-pill" id="pill-1"><span class="n">1</span>Upload file pesanan</div>
+    <div class="step-pill" id="pill-2"><span class="n">2</span>Upload daftar produk</div>
+    <div class="step-pill" id="pill-3"><span class="n">3</span>Cocokkan nama produk</div>
+    <div class="step-pill" id="pill-4"><span class="n">4</span>Cek hasil</div>
+    <div class="step-pill" id="pill-5"><span class="n">5</span>Download</div>
+  </div>
+
+  <!-- STEP 1: UPLOAD -->
+  <div class="card">
+    <h2>1. Upload file mentah dari Shopee</h2>
+    <p class="hint">Drag & drop file export <b>"Order All"</b> (.xlsx) dari Seller Centre Shopee ke sini.</p>
+
+    <div id="dropzone" class="drop">
+      <span class="ic">📥</span>
+      <b>Tarik & lepas file di sini, atau klik untuk pilih file</b>
+      <div class="small">Format: .xlsx / .xls / .csv</div>
+    </div>
+    <input type="file" id="fileInput" accept=".xlsx,.xls,.csv">
+    <div id="filepillHolder" style="margin-top:10px;"></div>
+
+    <div class="row" style="margin-top:16px;">
+      <div class="field">
+        <label>Nama Customer (kolom *Customer)</label>
+        <input type="text" id="customerName" value="SHOPEE KOKIKO">
+      </div>
+      <div class="field">
+        <label>Sertakan status "Belum Bayar"?</label>
+        <div class="checkrow"><input type="checkbox" id="includeUnpaid" checked> <span style="color:var(--ink-soft); font-size:12.5px;">Ikut masuk sheet Invoice (biasanya belum lunas)</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 2A: PRODUCT LIST UPLOAD (independent, bisa kapan saja) -->
+  <div class="card">
+    <h2>2. Upload daftar produk</h2>
+    <p class="hint">Terpisah dari file pesanan Shopee. Upload <b>sekali saja</b> — otomatis tersimpan di browser ini, jadi lain kali buka aplikasi ini tidak perlu upload ulang.</p>
+
+    <div id="mapDropzone" class="drop" style="padding:20px;">
+      <span class="ic">📄</span>
+      <b>Tarik & lepas file daftar produk di sini, atau klik untuk pilih file</b>
+      <div class="small">2 kolom: nama produk Shopee → nama produk template. Format: .xlsx / .xls / .csv</div>
+    </div>
+    <input type="file" id="mapFileInput" accept=".xlsx,.xls,.csv">
+    <div id="mapFilePillHolder" style="margin-top:10px;"></div>
+    <div id="storageNote" style="margin-top:10px; font-size:12px; color:var(--ink-soft);"></div>
+  </div>
+
+  <!-- STEP 2B: MAPPING TABLE (butuh file pesanan sudah diupload) -->
+  <div class="card" id="mapCard" style="display:none;">
+    <h2>3. Cocokkan nama produk ke nama template</h2>
+    <p class="hint">Kolom kiri = nama produk asli dari Shopee (dari file pesanan). Kolom kanan otomatis terisi kalau sudah cocok dengan daftar produk di atas — sisanya bisa diisi manual.</p>
+
+    <div class="row" style="margin-bottom:12px;">
+      <div class="field" style="flex:0 0 auto;">
+        <button class="btn btn-ghost btn-sm" id="autoFillBtn">✓ Samakan semua kosong dengan nama asli</button>
+      </div>
+    </div>
+
+    <div class="tablewrap">
+      <table id="mapTable">
+        <thead><tr><th style="width:44%">Nama Produk (Shopee)</th><th style="width:44%">Nama Produk (Template)</th><th>Status</th></tr></thead>
+        <tbody id="mapTbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- STEP 3: RESULT PREVIEW -->
+  <div class="card" id="resultCard" style="display:none;">
+    <h2>3. Ringkasan hasil convert</h2>
+    <p class="hint">Pesanan batal otomatis dipisah ke sheet sendiri, plus draft pesan WA per pesanan.</p>
+
+    <div class="statpills" id="statPills"></div>
+
+    <div class="section-title">Preview — Sheet Invoice</div>
+    <div class="tablewrap">
+      <table id="invoiceTable"><thead></thead><tbody></tbody></table>
+    </div>
+
+    <div class="section-title">Preview — Sheet Batal</div>
+    <div class="tablewrap">
+      <table id="batalTable"><thead></thead><tbody></tbody></table>
+    </div>
+
+    <div class="section-title">Draft pesan WA untuk pesanan batal</div>
+    <label style="margin-bottom:6px;">Template pesan (bisa diedit)</label>
+    <textarea id="waTemplate" rows="4">Halo kak {nama}, mohon maaf pesanan Shopee No. {no_pesanan} ({produk}) kami batalkan. Alasan: {alasan}. Mohon maaf atas ketidaknyamanannya ya kak 🙏 Jika ingin pesan ulang, kami siap bantu kapan saja.</textarea>
+    <p class="placeholders">Placeholder yang bisa dipakai: <code>{nama}</code> <code>{no_pesanan}</code> <code>{produk}</code> <code>{alasan}</code></p>
+
+    <div id="waList" style="margin-top:12px;"></div>
+    <div class="actions">
+      <button class="btn btn-ghost btn-sm" id="copyWaBtn">📋 Salin semua pesan WA</button>
+    </div>
+  </div>
+
+  <!-- STEP 4: DOWNLOAD -->
+  <div class="card" id="downloadCard" style="display:none;">
+    <h2>4. Download hasil convert</h2>
+    <p class="hint">File Excel berisi 2 sheet: <b>Invoice</b> (siap upload) dan <b>Batal</b> (arsip pesanan dibatalkan).</p>
+    <div class="actions">
+      <button class="btn btn-primary" id="downloadBtn">⬇️ Download Excel</button>
+    </div>
+  </div>
+
+  <footer>Dibuat khusus untuk convert data pesanan Shopee → format invoice. Diproses langsung di browser, data tidak dikirim ke server manapun.</footer>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+// ---------- Column name helpers (robust to whitespace variants) ----------
+function norm(s){ return (s||'').toString().trim(); }
+function getVal(row, name){
+  if(row[name] !== undefined) return row[name];
+  const key = Object.keys(row).find(k => norm(k) === norm(name));
+  return key ? row[key] : undefined;
+}
+
+const TEMPLATE_HEADERS = ["*Customer","Email","BillingAddress","ShippingAddress","*InvoiceDate","*DueDate",
+"ShippingDate","ShipVia","TrackingNo","CustomerRefNo","*InvoiceNumber","Message","Memo","*ProductName",
+"Description","*Quantity","*Unit","*UnitPrice","ProductDiscountRate(%)","InvoiceDiscount(value or %)",
+"TaxName","TaxRate(%)","ShippingFee","WitholdingAccountCode","WitholdingAmount(value or %)","#paid?(yes/no)",
+"#PaymentMethod","#PaidToAccountCode","Tags (use ; to separate tags)","WarehouseName",
+"#currency code(example: IDR, USD, CAD)"];
+
+const BATAL_HEADERS = ["No. Pesanan","Status Pesanan","Alasan Pembatalan","Nama Produk","Jumlah",
+"Nama Penerima","No. Telepon","Waktu Pesanan Dibuat"];
+
+let rawRows = [];
+let productMap = {}; // original -> mapped
+let pendingMapRows = null; // canonical [{orig, mapped}] pairs, applied once raw file is loaded
+let validRows = [];
+let cancelledRows = [];
+let cancelledOrders = []; // grouped by order number
+let invoiceOut = [];
+let batalOut = [];
+
+// ---------- persistent product-list storage (window.storage, when available) ----------
+const STORAGE_KEY = 'kokiko-shopee-product-mapping';
+const hasStorage = () => typeof window.storage !== 'undefined' && window.storage;
+
+async function saveMappingToStorage(entries){
+  if(!hasStorage()) return false;
+  try{
+    await window.storage.set(STORAGE_KEY, JSON.stringify(entries), false);
+    return true;
+  }catch(err){ console.error('Gagal menyimpan daftar produk:', err); return false; }
+}
+
+async function loadMappingFromStorage(){
+  if(!hasStorage()) return null;
+  try{
+    const res = await window.storage.get(STORAGE_KEY, false);
+    if(res && res.value) return JSON.parse(res.value);
+    return null;
+  }catch(err){ return null; } // key not found or other error
+}
+
+async function clearMappingStorage(){
+  if(!hasStorage()) return;
+  try{ await window.storage.delete(STORAGE_KEY, false); }catch(err){ /* ignore */ }
+}
+
+function entriesFromProductMap(){
+  return Object.keys(productMap).filter(k => productMap[k]).map(k => ({orig:k, mapped:productMap[k]}));
+}
+
+// ---------- date formatting: "2026-08-06 08:31" -> "6/8/2026" ----------
+function fmtDate(v){
+  if(!v) return '';
+  let d;
+  if(v instanceof Date){ d = v; }
+  else if(typeof v === 'number'){ d = XLSX.SSF.parse_date_code(v); return `${d.d}/${d.m}/${d.y}`; }
+  else {
+    const s = norm(v).split(' ')[0];
+    const parts = s.split('-');
+    if(parts.length === 3){ return `${parseInt(parts[2])}/${parseInt(parts[1])}/${parts[0]}`; }
+    d = new Date(v);
+    if(!isNaN(d)) return `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`;
+    return s;
+  }
+  return `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`;
+}
+
+// ---------- drag & drop / file input ----------
+const dropzone = $('dropzone');
+const fileInput = $('fileInput');
+dropzone.addEventListener('click', () => fileInput.click());
+['dragenter','dragover'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.add('drag'); }));
+['dragleave','drop'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.remove('drag'); }));
+dropzone.addEventListener('drop', e => { if(e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener('change', e => { if(e.target.files.length) handleFile(e.target.files[0]); });
+
+function readFileAsRows(file, cb){
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const wb = XLSX.read(e.target.result, {type:'array', cellDates:true});
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const json = XLSX.utils.sheet_to_json(sheet, {defval:''});
+    cb(json);
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function handleFile(file){
+  readFileAsRows(file, (rows) => {
+    rawRows = rows;
+    $('filepillHolder').innerHTML = `<div class="filepill"><span>✓ ${file.name} — ${rows.length} baris terbaca</span><span class="rm" id="rmFile">hapus</span></div>`;
+    $('rmFile').onclick = () => { rawRows = []; $('filepillHolder').innerHTML=''; resetDownstream(); markStep(1); };
+    markStep(3);
+    buildProductMap();
+    processAndRender();
+  });
+}
+
+function resetDownstream(){
+  $('mapCard').style.display='none';
+  $('resultCard').style.display='none';
+  $('downloadCard').style.display='none';
+}
+
+function markStep(n){
+  for(let i=1;i<=5;i++){
+    const p = $('pill-'+i);
+    p.classList.remove('active','done');
+    if(i < n) p.classList.add('done');
+    if(i === n) p.classList.add('active');
+  }
+}
+markStep(1);
+
+// ---------- product mapping table ----------
+function buildProductMap(){
+  const names = new Set();
+  rawRows.forEach(r => {
+    const status = norm(getVal(r,'Status Pesanan'));
+    const name = norm(getVal(r,'Nama Produk'));
+    if(name) names.add(name);
+  });
+  const sorted = Array.from(names).sort();
+  sorted.forEach(n => { if(!(n in productMap)) productMap[n] = ''; });
+  // remove stale entries not present anymore
+  Object.keys(productMap).forEach(k => { if(!names.has(k)) delete productMap[k]; });
+
+  // apply any product-list uploaded (or restored from storage) before the raw order file arrived
+  if(pendingMapRows){
+    applyMapEntries(pendingMapRows);
+  }
+
+  renderMapTable();
+  $('mapCard').style.display = 'block';
+}
+
+function renderMapTable(){
+  const tbody = $('mapTbody');
+  tbody.innerHTML = '';
+  Object.keys(productMap).sort().forEach(orig => {
+    const tr = document.createElement('tr');
+    tr.className = 'maprow';
+    const mapped = productMap[orig];
+    tr.innerHTML = `
+      <td>${escapeHtml(orig)}</td>
+      <td><input type="text" data-orig="${escapeAttr(orig)}" value="${escapeAttr(mapped)}" placeholder="nama sesuai template..."></td>
+      <td>${mapped ? '<span class="tag ok">Terisi</span>' : '<span class="tag warn">Belum diisi</span>'}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+  let saveTimer = null;
+  tbody.querySelectorAll('input').forEach(inp => {
+    inp.addEventListener('input', (e) => {
+      productMap[e.target.dataset.orig] = e.target.value;
+      const tag = e.target.closest('tr').querySelector('.tag');
+      if(e.target.value){ tag.className='tag ok'; tag.textContent='Terisi'; }
+      else { tag.className='tag warn'; tag.textContent='Belum diisi'; }
+      processAndRender();
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => persistCurrentMapping(), 600);
+    });
+  });
+}
+
+async function persistCurrentMapping(){
+  const entries = entriesFromProductMap();
+  if(!entries.length) return;
+  const ok = await saveMappingToStorage(entries);
+  if(ok) showStorageNote(`✓ Tersimpan otomatis (${entries.length} produk) — tidak perlu upload ulang lain kali`);
+}
+
+function showStorageNote(msg){
+  $('storageNote').textContent = msg;
+}
+
+$('autoFillBtn').addEventListener('click', () => {
+  Object.keys(productMap).forEach(k => { if(!productMap[k]) productMap[k] = k; });
+  renderMapTable();
+  processAndRender();
+  persistCurrentMapping();
+});
+
+const mapDropzone = $('mapDropzone');
+mapDropzone.addEventListener('click', () => $('mapFileInput').click());
+['dragenter','dragover'].forEach(ev => mapDropzone.addEventListener(ev, e => { e.preventDefault(); mapDropzone.classList.add('drag'); }));
+['dragleave','drop'].forEach(ev => mapDropzone.addEventListener(ev, e => { e.preventDefault(); mapDropzone.classList.remove('drag'); }));
+mapDropzone.addEventListener('drop', e => { if(e.dataTransfer.files.length) handleMapFile(e.dataTransfer.files[0]); });
+$('mapFileInput').addEventListener('change', (e) => { if(e.target.files.length) handleMapFile(e.target.files[0]); });
+
+function handleMapFile(file){
+  readFileAsRows(file, async (rows) => {
+    if(!rows.length) return;
+    const keys = Object.keys(rows[0]);
+    const kOrig = keys[0], kNew = keys[1] || keys[0];
+    const entries = rows.map(r => ({orig: norm(r[kOrig]), mapped: norm(r[kNew])})).filter(e => e.orig);
+
+    pendingMapRows = entries;
+    const matched = applyMapEntries(entries);
+    const haveOrders = rawRows.length > 0;
+    const note = haveOrders
+      ? `${matched} produk cocok dari ${entries.length} baris`
+      : `${entries.length} baris tersimpan — akan dicocokkan otomatis begitu file pesanan Shopee diupload`;
+    renderMapPill(file.name, note, true);
+    if(haveOrders){ renderMapTable(); processAndRender(); }
+
+    const saved = await saveMappingToStorage(entries);
+    showStorageNote(saved
+      ? `✓ Tersimpan otomatis di browser ini (${entries.length} produk) — lain kali tidak perlu upload ulang`
+      : `⚠️ Tidak bisa disimpan otomatis di sesi ini. Buka lewat file yang sudah diunduh (bukan file:// langsung) agar tersimpan, atau upload ulang tiap sesi.`);
+  });
+}
+
+function renderMapPill(name, note, removable){
+  $('mapFilePillHolder').innerHTML = `<div class="filepill"><span>✓ ${escapeHtml(name)} — ${escapeHtml(note)}</span>${removable ? '<span class="rm" id="rmMapFile">hapus</span>' : ''}</div>`;
+  if(removable){
+    $('rmMapFile').onclick = async () => {
+      pendingMapRows = null;
+      Object.keys(productMap).forEach(k => productMap[k] = '');
+      $('mapFilePillHolder').innerHTML = '';
+      $('pill-2').classList.remove('done');
+      await clearMappingStorage();
+      showStorageNote('Data produk tersimpan sudah dihapus.');
+      if(rawRows.length){ renderMapTable(); processAndRender(); }
+    };
+  }
+  $('pill-2').classList.add('done');
+}
+
+// Applies canonical [{orig, mapped}] entries onto the current productMap. Returns match count.
+function applyMapEntries(entries){
+  if(!entries || !entries.length) return 0;
+  let matched = 0;
+  entries.forEach(({orig, mapped}) => {
+    if(orig && (orig in productMap) && mapped){ productMap[orig] = mapped; matched++; }
+  });
+  return matched;
+}
+
+// On load: try to restore a previously saved product list from this browser
+(async function restoreSavedMapping(){
+  const entries = await loadMappingFromStorage();
+  if(entries && entries.length){
+    pendingMapRows = entries;
+    renderMapPill('Daftar produk tersimpan', `${entries.length} produk dimuat dari penyimpanan browser`, true);
+    showStorageNote('Daftar produk ini tersimpan dari sesi sebelumnya. Upload file baru untuk menggantinya.');
+  } else if(!hasStorage()){
+    showStorageNote('Catatan: penyimpanan otomatis butuh membuka file ini lewat tampilan Claude. Jika dibuka langsung sebagai file di komputer, daftar produk perlu diupload ulang tiap sesi.');
+  }
+})();
+
+function escapeHtml(s){ return (s||'').toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function escapeAttr(s){ return escapeHtml(s); }
+
+// ---------- core processing ----------
+function processAndRender(){
+  if(!rawRows.length) return;
+  const customer = $('customerName').value || 'SHOPEE KOKIKO';
+  const includeUnpaid = $('includeUnpaid').checked;
+
+  validRows = [];
+  cancelledRows = [];
+
+  rawRows.forEach(r => {
+    const status = norm(getVal(r,'Status Pesanan'));
+    if(!status) return;
+    if(status === 'Batal'){ cancelledRows.push(r); }
+    else if(status === 'Belum Bayar' && !includeUnpaid){ /* skip */ }
+    else { validRows.push(r); }
+  });
+
+  invoiceOut = validRows.map(r => {
+    const origName = norm(getVal(r,'Nama Produk'));
+    const mapped = productMap[origName] || origName;
+    const date = fmtDate(getVal(r,'Waktu Pesanan Dibuat'));
+    const row = {};
+    TEMPLATE_HEADERS.forEach(h => row[h] = '');
+    row['*Customer'] = customer;
+    row['*InvoiceDate'] = date;
+    row['*DueDate'] = date;
+    row['*InvoiceNumber'] = norm(getVal(r,'No. Pesanan'));
+    row['*ProductName'] = mapped;
+    row['*Quantity'] = getVal(r,'Jumlah') || 0;
+    row['*Unit'] = 'Pcs';
+    row['*UnitPrice'] = getVal(r,'Harga Setelah Diskon') || 0;
+    return row;
+  });
+
+  batalOut = cancelledRows.map(r => ({
+    "No. Pesanan": norm(getVal(r,'No. Pesanan')),
+    "Status Pesanan": norm(getVal(r,'Status Pesanan')),
+    "Alasan Pembatalan": norm(getVal(r,'Alasan Pembatalan')),
+    "Nama Produk": norm(getVal(r,'Nama Produk')),
+    "Jumlah": getVal(r,'Jumlah') || 0,
+    "Nama Penerima": norm(getVal(r,'Nama Penerima')),
+    "No. Telepon": norm(getVal(r,'No. Telepon')),
+    "Waktu Pesanan Dibuat": fmtDate(getVal(r,'Waktu Pesanan Dibuat'))
+  }));
+
+  // group cancelled by order number for WA drafts
+  const byOrder = {};
+  cancelledRows.forEach(r => {
+    const no = norm(getVal(r,'No. Pesanan'));
+    if(!byOrder[no]) byOrder[no] = {
+      no_pesanan: no,
+      nama: norm(getVal(r,'Nama Penerima')),
+      alasan: norm(getVal(r,'Alasan Pembatalan')),
+      produk: []
+    };
+    byOrder[no].produk.push(norm(getVal(r,'Nama Produk')));
+  });
+  cancelledOrders = Object.values(byOrder);
+
+  renderResults();
+}
+
+function renderResults(){
+  $('resultCard').style.display = 'block';
+  $('downloadCard').style.display = 'block';
+  markStep(4);
+
+  const unmapped = Object.values(productMap).filter(v => !v).length;
+  $('statPills').innerHTML = `
+    <div class="stat ok"><div class="num">${validRows.length}</div><div class="lbl">Baris invoice</div></div>
+    <div class="stat bad"><div class="num">${cancelledRows.length}</div><div class="lbl">Baris batal</div></div>
+    <div class="stat"><div class="num">${new Set(validRows.map(r=>norm(getVal(r,'No. Pesanan')))).size}</div><div class="lbl">Pesanan valid</div></div>
+    <div class="stat ${unmapped ? 'warn' : ''}"><div class="num">${unmapped}</div><div class="lbl">Produk belum dipetakan</div></div>
+  `;
+
+  renderTable('invoiceTable', TEMPLATE_HEADERS, invoiceOut.slice(0, 12));
+  renderTable('batalTable', BATAL_HEADERS, batalOut.slice(0, 12));
+
+  renderWaList();
+}
+
+function renderTable(tableId, headers, rows){
+  const table = $(tableId);
+  const thead = table.querySelector('thead');
+  const tbody = table.querySelector('tbody');
+  thead.innerHTML = '<tr>' + headers.map(h => `<th>${escapeHtml(h)}</th>`).join('') + '</tr>';
+  if(!rows.length){
+    tbody.innerHTML = `<tr><td colspan="${headers.length}"><div class="empty">Tidak ada data</div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = rows.map(r => '<tr>' + headers.map(h => `<td>${escapeHtml(r[h])}</td>`).join('') + '</tr>').join('');
+}
+
+function buildWaText(order){
+  const tpl = $('waTemplate').value;
+  return tpl
+    .replaceAll('{nama}', order.nama || '-')
+    .replaceAll('{no_pesanan}', order.no_pesanan)
+    .replaceAll('{produk}', order.produk.join(', '))
+    .replaceAll('{alasan}', order.alasan || '-');
+}
+
+function renderWaList(){
+  const holder = $('waList');
+  if(!cancelledOrders.length){
+    holder.innerHTML = '<div class="empty">Tidak ada pesanan batal 🎉</div>';
+    return;
+  }
+  holder.innerHTML = cancelledOrders.map(o => `
+    <div class="wa-block"><span class="waorder">No. ${escapeHtml(o.no_pesanan)}</span>${escapeHtml(buildWaText(o))}</div>
+  `).join('');
+}
+
+$('waTemplate').addEventListener('input', renderWaList);
+$('customerName').addEventListener('input', processAndRender);
+$('includeUnpaid').addEventListener('change', processAndRender);
+
+$('copyWaBtn').addEventListener('click', () => {
+  const text = cancelledOrders.map(o => `No. ${o.no_pesanan}\n${buildWaText(o)}`).join('\n\n---\n\n');
+  navigator.clipboard.writeText(text).then(() => {
+    $('copyWaBtn').textContent = '✓ Tersalin!';
+    setTimeout(() => $('copyWaBtn').textContent = '📋 Salin semua pesan WA', 1600);
+  }).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+    $('copyWaBtn').textContent = '✓ Tersalin!';
+    setTimeout(() => $('copyWaBtn').textContent = '📋 Salin semua pesan WA', 1600);
+  });
+});
+
+$('downloadBtn').addEventListener('click', () => {
+  const wb = XLSX.utils.book_new();
+  const wsInvoice = XLSX.utils.json_to_sheet(invoiceOut, {header: TEMPLATE_HEADERS});
+  const wsBatal = XLSX.utils.json_to_sheet(batalOut, {header: BATAL_HEADERS});
+  XLSX.utils.book_append_sheet(wb, wsInvoice, 'Invoice');
+  XLSX.utils.book_append_sheet(wb, wsBatal, 'Batal');
+  const today = new Date();
+  const fname = `Invoice_Shopee_${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}.xlsx`;
+  XLSX.writeFile(wb, fname);
+  markStep(5);
+});
+</script>
+</body>
+</html>
