@@ -33,8 +33,18 @@
   .wrap{max-width:1040px;margin:0 auto;padding:28px 20px 80px;}
 
   .top{
-    display:flex; align-items:center; gap:14px; margin-bottom:6px;
+    display:flex; align-items:flex-start; gap:14px; margin-bottom:6px; flex-wrap:wrap;
   }
+  .top-text{flex:1; min-width:220px;}
+  .header-actions{display:flex; gap:8px; flex-wrap:wrap; margin-left:auto; padding-top:2px;}
+  .header-file-status{display:flex; gap:8px; flex-wrap:wrap; margin:10px 0 0;}
+  .header-file-status .chip{
+    font-size:11.5px; font-weight:600; padding:5px 10px; border-radius:100px;
+    display:inline-flex; align-items:center; gap:6px; border:1px solid var(--line); background:var(--panel); color:var(--ink-soft);
+  }
+  .header-file-status .chip.ok{color:#0f5132; background:var(--ok-bg); border-color:#bfe3cd;}
+  .header-file-status .chip .rm{cursor:pointer; opacity:.6; text-decoration:underline;}
+  .header-file-status .chip .rm:hover{opacity:1;}
   .mark{
     width:38px;height:38px;border-radius:10px;
     background:linear-gradient(135deg,var(--shopee),var(--shopee-dark));
@@ -44,8 +54,7 @@
   }
   h1{font-size:21px; margin:0; letter-spacing:-0.01em;}
   .sub{color:var(--ink-soft); font-size:13.5px; margin:2px 0 0;}
-  .top-text{display:flex; flex-direction:column;}
-
+  .top-text{flex:1; min-width:220px;}
   .steps{
     display:flex; gap:8px; margin:26px 0 18px; flex-wrap:wrap;
   }
@@ -171,14 +180,21 @@
       <h1>Konverter Pesanan Shopee → Invoice</h1>
       <p class="sub">Ubah file "Order All" Shopee jadi format invoice siap upload — otomatis, tanpa ubah data mentah.</p>
     </div>
+    <div class="header-actions">
+      <button class="btn btn-ghost btn-sm" id="mapFileBtn" title="2 kolom: nama produk Shopee → nama produk template">📄 Daftar Produk</button>
+      <button class="btn btn-ghost btn-sm" id="masterFileBtn" title="Laporan produk dari Jurnal, mis. Nilai Stok Gudang">🗂️ Data Jurnal</button>
+    </div>
+    <input type="file" id="mapFileInput" accept=".xlsx,.xls,.csv" style="display:none;">
+    <input type="file" id="masterFileInput" accept=".xlsx,.xls,.csv" style="display:none;">
   </div>
+  <div id="headerFileStatus" class="header-file-status"></div>
+  <div id="backendNote" style="font-size:11.5px; color:var(--ink-soft); margin-top:6px;"></div>
 
   <div class="steps">
     <div class="step-pill" id="pill-1"><span class="n">1</span>Upload file pesanan</div>
-    <div class="step-pill" id="pill-2"><span class="n">2</span>Upload daftar produk</div>
-    <div class="step-pill" id="pill-3"><span class="n">3</span>Cocokkan nama produk</div>
-    <div class="step-pill" id="pill-4"><span class="n">4</span>Cek hasil</div>
-    <div class="step-pill" id="pill-5"><span class="n">5</span>Download</div>
+    <div class="step-pill" id="pill-2"><span class="n">2</span>Cocokkan nama produk</div>
+    <div class="step-pill" id="pill-3"><span class="n">3</span>Cek hasil</div>
+    <div class="step-pill" id="pill-4"><span class="n">4</span>Download</div>
   </div>
 
   <!-- STEP 1: UPLOAD -->
@@ -203,37 +219,10 @@
     <p class="hint" style="margin:12px 0 0;">Pesanan berstatus <b>Belum Bayar</b> dan <b>Batal</b> otomatis dikecualikan dari sheet Invoice. Batal tetap masuk sheet &amp; draft WA terpisah di bawah.</p>
   </div>
 
-  <!-- STEP 2A: PRODUCT LIST UPLOAD (independent, bisa kapan saja) -->
-  <div class="card">
-    <h2>2. Upload daftar produk</h2>
-    <p class="hint">Terpisah dari file pesanan Shopee. Upload <b>sekali saja</b> — otomatis tersimpan di browser ini, jadi lain kali buka aplikasi ini tidak perlu upload ulang.</p>
-
-    <div id="mapDropzone" class="drop" style="padding:20px;">
-      <span class="ic">📄</span>
-      <b>Tarik & lepas file daftar produk di sini, atau klik untuk pilih file</b>
-      <div class="small">2 kolom: nama produk Shopee → nama produk template. Format: .xlsx / .xls / .csv</div>
-    </div>
-    <input type="file" id="mapFileInput" accept=".xlsx,.xls,.csv">
-    <div id="mapFilePillHolder" style="margin-top:10px;"></div>
-    <div id="storageNote" style="margin-top:10px; font-size:12px; color:var(--ink-soft);"></div>
-
-    <hr class="divider">
-
-    <label style="margin-bottom:6px;">Master data produk (opsional)</label>
-    <p class="hint" style="margin-top:0;">Upload laporan produk dari Jurnal (mis. "Nilai Stok Gudang") supaya nama produk yang diisi selalu cocok persis dengan yang terdaftar resmi — dipakai untuk autocomplete & saran otomatis di tabel pencocokan.</p>
-    <div id="masterDropzone" class="drop" style="padding:20px;">
-      <span class="ic">🗂️</span>
-      <b>Tarik & lepas laporan produk Jurnal di sini, atau klik untuk pilih file</b>
-      <div class="small">Format: .xlsx / .xls — kolom "Kode Produk" &amp; "Nama Produk" dideteksi otomatis</div>
-    </div>
-    <input type="file" id="masterFileInput" accept=".xlsx,.xls,.csv">
-    <div id="masterFilePillHolder" style="margin-top:10px;"></div>
-  </div>
-
-  <!-- STEP 2B: MAPPING TABLE (butuh file pesanan sudah diupload) -->
+  <!-- MAPPING TABLE (butuh file pesanan sudah diupload) -->
   <div class="card" id="mapCard" style="display:none;">
-    <h2>3. Cocokkan nama produk ke nama template</h2>
-    <p class="hint">Kolom kiri = nama produk asli dari Shopee (dari file pesanan). Kolom kanan otomatis terisi kalau sudah cocok dengan daftar produk di atas — sisanya bisa diisi manual (autocomplete tersedia kalau master data Jurnal sudah diupload).</p>
+    <h2>2. Cocokkan nama produk ke nama template</h2>
+    <p class="hint">Kolom kiri = nama produk asli dari Shopee (dari file pesanan). Kolom kanan otomatis terisi kalau sudah cocok dengan daftar produk (tombol "📄 Daftar Produk" / "🗂️ Data Jurnal" di pojok kanan atas) — sisanya bisa diisi manual (autocomplete tersedia kalau data Jurnal sudah diupload).</p>
 
     <div class="row" style="margin-bottom:12px;">
       <div class="field" style="flex:0 0 auto;">
@@ -255,7 +244,7 @@
 
   <!-- STEP 3: RESULT PREVIEW -->
   <div class="card" id="resultCard" style="display:none;">
-    <h2>4. Ringkasan hasil convert</h2>
+    <h2>3. Ringkasan hasil convert</h2>
     <p class="hint">Pesanan batal otomatis dipisah ke sheet sendiri, plus draft pesan WA per pesanan.</p>
 
     <div class="statpills" id="statPills"></div>
@@ -283,7 +272,7 @@
 
   <!-- STEP 4: DOWNLOAD -->
   <div class="card" id="downloadCard" style="display:none;">
-    <h2>5. Download hasil convert</h2>
+    <h2>4. Download hasil convert</h2>
     <p class="hint">File Excel berisi sheet <b>Invoice</b> saja (siap upload) — pesanan <b>Belum Bayar</b> dan <b>Batal</b> tidak ikut diekspor. Preview pesanan batal & draft WA di atas tetap bisa dipakai untuk follow-up manual.</p>
     <div class="actions">
       <button class="btn btn-primary" id="downloadBtn">⬇️ Download Excel</button>
@@ -324,58 +313,96 @@ let cancelledOrders = []; // grouped by order number
 let invoiceOut = [];
 let batalOut = [];
 
-// ---------- persistent product-list storage (window.storage, when available) ----------
-const STORAGE_KEY = 'kokiko-shopee-product-mapping';
-const MASTER_STORAGE_KEY = 'kokiko-shopee-jurnal-master-products';
+// ---------- BACKEND CONFIG ----------
+// Isi 2 nilai ini dengan punya Anda dari Supabase (Project Settings → API) supaya
+// data produk tersimpan di cloud dan sinkron di semua device. Kosongkan untuk
+// pakai penyimpanan browser biasa (window.storage, hanya jalan saat dibuka lewat Claude).
+const SUPABASE_URL = '';        // contoh: 'https://xxxxxxx.supabase.co'
+const SUPABASE_ANON_KEY = '';   // contoh: 'eyJhbGciOi...'
+
+const hasSupabase = () => !!(SUPABASE_URL && SUPABASE_ANON_KEY);
 const hasStorage = () => typeof window.storage !== 'undefined' && window.storage;
 
-async function saveMappingToStorage(entries){
-  if(!hasStorage()) return false;
-  try{
-    await window.storage.set(STORAGE_KEY, JSON.stringify(entries), false);
-    return true;
-  }catch(err){ console.error('Gagal menyimpan daftar produk:', err); return false; }
+function supabaseHeaders(){
+  return {
+    'apikey': SUPABASE_ANON_KEY,
+    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+    'Content-Type': 'application/json',
+  };
 }
 
-async function loadMappingFromStorage(){
-  if(!hasStorage()) return null;
-  try{
-    const res = await window.storage.get(STORAGE_KEY, false);
-    if(res && res.value) return JSON.parse(res.value);
-    return null;
-  }catch(err){ return null; } // key not found or other error
+// Generic key-value backend, table: kokiko_kv (k text primary key, v jsonb, updated_at timestamptz)
+async function backendGet(key){
+  if(hasSupabase()){
+    try{
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/kokiko_kv?k=eq.${encodeURIComponent(key)}&select=v`, {headers: supabaseHeaders()});
+      if(!res.ok) throw new Error('Supabase GET failed: ' + res.status);
+      const rows = await res.json();
+      return rows.length ? rows[0].v : null;
+    }catch(err){ console.error('Supabase get error:', err); return null; }
+  }
+  if(hasStorage()){
+    try{
+      const res = await window.storage.get(key, false);
+      return res && res.value ? JSON.parse(res.value) : null;
+    }catch(err){ return null; }
+  }
+  return null;
 }
 
-async function clearMappingStorage(){
-  if(!hasStorage()) return;
-  try{ await window.storage.delete(STORAGE_KEY, false); }catch(err){ /* ignore */ }
+async function backendSet(key, value){
+  if(hasSupabase()){
+    try{
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/kokiko_kv`, {
+        method: 'POST',
+        headers: {...supabaseHeaders(), 'Prefer': 'resolution=merge-duplicates,return=minimal'},
+        body: JSON.stringify([{k: key, v: value, updated_at: new Date().toISOString()}])
+      });
+      if(!res.ok) throw new Error('Supabase SET failed: ' + res.status);
+      return true;
+    }catch(err){ console.error('Supabase set error:', err); return false; }
+  }
+  if(hasStorage()){
+    try{ await window.storage.set(key, JSON.stringify(value), false); return true; }
+    catch(err){ console.error('window.storage set error:', err); return false; }
+  }
+  return false;
 }
 
-async function saveMasterToStorage(list){
-  if(!hasStorage()) return false;
-  try{
-    await window.storage.set(MASTER_STORAGE_KEY, JSON.stringify(list), false);
-    return true;
-  }catch(err){ console.error('Gagal menyimpan master produk:', err); return false; }
+async function backendDelete(key){
+  if(hasSupabase()){
+    try{
+      await fetch(`${SUPABASE_URL}/rest/v1/kokiko_kv?k=eq.${encodeURIComponent(key)}`, {method:'DELETE', headers: supabaseHeaders()});
+    }catch(err){ console.error('Supabase delete error:', err); }
+    return;
+  }
+  if(hasStorage()){
+    try{ await window.storage.delete(key, false); }catch(err){ /* ignore */ }
+  }
 }
 
-async function loadMasterFromStorage(){
-  if(!hasStorage()) return null;
-  try{
-    const res = await window.storage.get(MASTER_STORAGE_KEY, false);
-    if(res && res.value) return JSON.parse(res.value);
-    return null;
-  }catch(err){ return null; }
+function backendModeLabel(){
+  if(hasSupabase()) return '☁️ Tersambung ke backend (sinkron di semua device)';
+  if(hasStorage()) return '💾 Tersimpan di browser ini saja (buka lewat Claude)';
+  return '⚠️ Belum ada backend terpasang — isi SUPABASE_URL & SUPABASE_ANON_KEY di kode supaya data tersimpan';
 }
 
-async function clearMasterStorage(){
-  if(!hasStorage()) return;
-  try{ await window.storage.delete(MASTER_STORAGE_KEY, false); }catch(err){ /* ignore */ }
-}
+// ---------- persistent product-list storage ----------
+const STORAGE_KEY = 'kokiko-shopee-product-mapping';
+const MASTER_STORAGE_KEY = 'kokiko-shopee-jurnal-master-products';
+
+async function saveMappingToStorage(entries){ return backendSet(STORAGE_KEY, entries); }
+async function loadMappingFromStorage(){ return backendGet(STORAGE_KEY); }
+async function clearMappingStorage(){ return backendDelete(STORAGE_KEY); }
+
+async function saveMasterToStorage(list){ return backendSet(MASTER_STORAGE_KEY, list); }
+async function loadMasterFromStorage(){ return backendGet(MASTER_STORAGE_KEY); }
+async function clearMasterStorage(){ return backendDelete(MASTER_STORAGE_KEY); }
 
 function entriesFromProductMap(){
   return Object.keys(productMap).filter(k => productMap[k]).map(k => ({orig:k, mapped:productMap[k]}));
 }
+
 
 // ---------- parse a Jurnal "Nilai Stok Gudang"-style report into {kode, nama} pairs ----------
 function parseMasterProductSheet(aoa){
@@ -477,7 +504,7 @@ function handleFile(file){
     rawRows = rows;
     $('filepillHolder').innerHTML = `<div class="filepill"><span>✓ ${file.name} — ${rows.length} baris terbaca</span><span class="rm" id="rmFile">hapus</span></div>`;
     $('rmFile').onclick = () => { rawRows = []; $('filepillHolder').innerHTML=''; resetDownstream(); markStep(1); };
-    markStep(3);
+    markStep(2);
     buildProductMap();
     processAndRender();
   });
@@ -490,7 +517,7 @@ function resetDownstream(){
 }
 
 function markStep(n){
-  for(let i=1;i<=5;i++){
+  for(let i=1;i<=4;i++){
     const p = $('pill-'+i);
     p.classList.remove('active','done');
     if(i < n) p.classList.add('done');
@@ -553,11 +580,12 @@ async function persistCurrentMapping(){
   const entries = entriesFromProductMap();
   if(!entries.length) return;
   const ok = await saveMappingToStorage(entries);
-  if(ok) showStorageNote(`✓ Tersimpan otomatis (${entries.length} produk) — tidak perlu upload ulang lain kali`);
+  renderHeaderStatus();
+  if(!ok) showBackendWarningOnce();
 }
 
-function showStorageNote(msg){
-  $('storageNote').textContent = msg;
+function showBackendWarningOnce(){
+  $('backendNote').textContent = backendModeLabel();
 }
 
 $('autoFillBtn').addEventListener('click', () => {
@@ -567,11 +595,7 @@ $('autoFillBtn').addEventListener('click', () => {
   persistCurrentMapping();
 });
 
-const mapDropzone = $('mapDropzone');
-mapDropzone.addEventListener('click', () => $('mapFileInput').click());
-['dragenter','dragover'].forEach(ev => mapDropzone.addEventListener(ev, e => { e.preventDefault(); mapDropzone.classList.add('drag'); }));
-['dragleave','drop'].forEach(ev => mapDropzone.addEventListener(ev, e => { e.preventDefault(); mapDropzone.classList.remove('drag'); }));
-mapDropzone.addEventListener('drop', e => { if(e.dataTransfer.files.length) handleMapFile(e.dataTransfer.files[0]); });
+$('mapFileBtn').addEventListener('click', () => $('mapFileInput').click());
 $('mapFileInput').addEventListener('change', (e) => { if(e.target.files.length) handleMapFile(e.target.files[0]); });
 
 function handleMapFile(file){
@@ -584,33 +608,11 @@ function handleMapFile(file){
     pendingMapRows = entries;
     const matched = applyMapEntries(entries);
     const haveOrders = rawRows.length > 0;
-    const note = haveOrders
-      ? `${matched} produk cocok dari ${entries.length} baris`
-      : `${entries.length} baris tersimpan — akan dicocokkan otomatis begitu file pesanan Shopee diupload`;
-    renderMapPill(file.name, note, true);
     if(haveOrders){ renderMapTable(); processAndRender(); }
 
-    const saved = await saveMappingToStorage(entries);
-    showStorageNote(saved
-      ? `✓ Tersimpan otomatis di browser ini (${entries.length} produk) — lain kali tidak perlu upload ulang`
-      : `⚠️ Tidak bisa disimpan otomatis di sesi ini. Buka lewat file yang sudah diunduh (bukan file:// langsung) agar tersimpan, atau upload ulang tiap sesi.`);
+    await saveMappingToStorage(entries);
+    renderHeaderStatus();
   });
-}
-
-function renderMapPill(name, note, removable){
-  $('mapFilePillHolder').innerHTML = `<div class="filepill"><span>✓ ${escapeHtml(name)} — ${escapeHtml(note)}</span>${removable ? '<span class="rm" id="rmMapFile">hapus</span>' : ''}</div>`;
-  if(removable){
-    $('rmMapFile').onclick = async () => {
-      pendingMapRows = null;
-      Object.keys(productMap).forEach(k => productMap[k] = '');
-      $('mapFilePillHolder').innerHTML = '';
-      $('pill-2').classList.remove('done');
-      await clearMappingStorage();
-      showStorageNote('Data produk tersimpan sudah dihapus.');
-      if(rawRows.length){ renderMapTable(); processAndRender(); }
-    };
-  }
-  $('pill-2').classList.add('done');
 }
 
 // Applies canonical [{orig, mapped}] entries onto the current productMap. Returns match count.
@@ -623,24 +625,8 @@ function applyMapEntries(entries){
   return matched;
 }
 
-// On load: try to restore a previously saved product list from this browser
-(async function restoreSavedMapping(){
-  const entries = await loadMappingFromStorage();
-  if(entries && entries.length){
-    pendingMapRows = entries;
-    renderMapPill('Daftar produk tersimpan', `${entries.length} produk dimuat dari penyimpanan browser`, true);
-    showStorageNote('Daftar produk ini tersimpan dari sesi sebelumnya. Upload file baru untuk menggantinya.');
-  } else if(!hasStorage()){
-    showStorageNote('Catatan: penyimpanan otomatis butuh membuka file ini lewat tampilan Claude. Jika dibuka langsung sebagai file di komputer, daftar produk perlu diupload ulang tiap sesi.');
-  }
-})();
-
 // ---------- master product list (Jurnal) ----------
-const masterDropzone = $('masterDropzone');
-masterDropzone.addEventListener('click', () => $('masterFileInput').click());
-['dragenter','dragover'].forEach(ev => masterDropzone.addEventListener(ev, e => { e.preventDefault(); masterDropzone.classList.add('drag'); }));
-['dragleave','drop'].forEach(ev => masterDropzone.addEventListener(ev, e => { e.preventDefault(); masterDropzone.classList.remove('drag'); }));
-masterDropzone.addEventListener('drop', e => { if(e.dataTransfer.files.length) handleMasterFile(e.dataTransfer.files[0]); });
+$('masterFileBtn').addEventListener('click', () => $('masterFileInput').click());
 $('masterFileInput').addEventListener('change', (e) => { if(e.target.files.length) handleMasterFile(e.target.files[0]); });
 
 function handleMasterFile(file){
@@ -651,33 +637,68 @@ function handleMasterFile(file){
     const aoa = XLSX.utils.sheet_to_json(sheet, {header:1, defval:''});
     const list = parseMasterProductSheet(aoa);
     if(!list.length){
-      renderMasterPill(file.name, 'tidak ada produk terdeteksi — cek format file', false);
+      $('backendNote').textContent = `"${file.name}" — tidak ada produk terdeteksi, cek formatnya (butuh kolom "Kode Produk" & "Nama Produk").`;
       return;
     }
     masterProducts = list;
     renderMasterDatalist();
-    renderMasterPill(file.name, `${list.length} produk resmi dimuat — dipakai untuk autocomplete & saran otomatis`, true);
     if(rawRows.length) renderMapTable();
     await saveMasterToStorage(list);
+    renderHeaderStatus();
   };
   reader.readAsArrayBuffer(file);
 }
 
-function renderMasterPill(name, note, removable){
-  $('masterFilePillHolder').innerHTML = `<div class="filepill"><span>✓ ${escapeHtml(name)} — ${escapeHtml(note)}</span>${removable ? '<span class="rm" id="rmMasterFile">hapus</span>' : ''}</div>`;
-  if(removable){
-    $('rmMasterFile').onclick = async () => {
-      masterProducts = [];
-      renderMasterDatalist();
-      $('masterFilePillHolder').innerHTML = '';
-      await clearMasterStorage();
-    };
+// ---------- header status chips (Daftar Produk / Data Jurnal) ----------
+function renderHeaderStatus(){
+  const chips = [];
+  const mappedCount = entriesFromProductMap().length;
+  if(pendingMapRows && pendingMapRows.length){
+    chips.push(`<span class="chip ok">📄 ${pendingMapRows.length} produk dipetakan<span class="rm" id="rmMapChip"> ✕</span></span>`);
+  } else if(mappedCount){
+    chips.push(`<span class="chip ok">📄 ${mappedCount} produk dipetakan<span class="rm" id="rmMapChip"> ✕</span></span>`);
+  } else {
+    chips.push(`<span class="chip">📄 Belum ada daftar produk</span>`);
   }
+  if(masterProducts.length){
+    chips.push(`<span class="chip ok">🗂️ ${masterProducts.length} produk Jurnal<span class="rm" id="rmMasterChip"> ✕</span></span>`);
+  } else {
+    chips.push(`<span class="chip">🗂️ Belum ada data Jurnal</span>`);
+  }
+  $('headerFileStatus').innerHTML = chips.join('');
+  $('backendNote').textContent = backendModeLabel();
+
+  const rmMap = document.getElementById('rmMapChip');
+  if(rmMap) rmMap.onclick = async (ev) => {
+    ev.stopPropagation();
+    pendingMapRows = null;
+    Object.keys(productMap).forEach(k => productMap[k] = '');
+    await clearMappingStorage();
+    renderHeaderStatus();
+    if(rawRows.length){ renderMapTable(); processAndRender(); }
+  };
+  const rmMaster = document.getElementById('rmMasterChip');
+  if(rmMaster) rmMaster.onclick = async (ev) => {
+    ev.stopPropagation();
+    masterProducts = [];
+    renderMasterDatalist();
+    await clearMasterStorage();
+    renderHeaderStatus();
+    if(rawRows.length) renderMapTable();
+  };
 }
+
+// On load: try to restore previously saved product list + master list from the configured backend
+(async function restoreSavedData(){
+  const [entries, master] = await Promise.all([loadMappingFromStorage(), loadMasterFromStorage()]);
+  if(entries && entries.length) pendingMapRows = entries;
+  if(master && master.length){ masterProducts = master; renderMasterDatalist(); }
+  renderHeaderStatus();
+})();
 
 $('suggestFromMasterBtn').addEventListener('click', () => {
   if(!masterProducts.length){
-    showStorageNote('Upload dulu master data produk dari Jurnal di Langkah 2 sebelum pakai saran otomatis.');
+    $('backendNote').textContent = 'Upload dulu data Jurnal (tombol "🗂️ Data Jurnal" di kanan atas) sebelum pakai saran otomatis.';
     return;
   }
   let filled = 0;
@@ -689,18 +710,8 @@ $('suggestFromMasterBtn').addEventListener('click', () => {
   renderMapTable();
   processAndRender();
   persistCurrentMapping();
-  showStorageNote(`🔎 ${filled} nama produk terisi otomatis dari master data Jurnal. Cek ulang sebelum export — kecocokan berbasis kemiripan kata, bukan pasti 100% benar.`);
+  $('backendNote').textContent = `🔎 ${filled} nama produk terisi otomatis dari data Jurnal. Cek ulang sebelum export — kecocokan berbasis kemiripan kata, bukan pasti 100% benar.`;
 });
-
-// restore master product list from storage on load
-(async function restoreMasterProducts(){
-  const list = await loadMasterFromStorage();
-  if(list && list.length){
-    masterProducts = list;
-    renderMasterDatalist();
-    renderMasterPill('Master data produk tersimpan', `${list.length} produk dimuat dari penyimpanan browser`, true);
-  }
-})();
 
 function escapeHtml(s){ return (s||'').toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function escapeAttr(s){ return escapeHtml(s); }
@@ -782,7 +793,7 @@ function processAndRender(){
 function renderResults(){
   $('resultCard').style.display = 'block';
   $('downloadCard').style.display = 'block';
-  markStep(4);
+  markStep(3);
 
   const unmapped = Object.values(productMap).filter(v => !v).length;
   $('statPills').innerHTML = `
@@ -855,7 +866,7 @@ $('downloadBtn').addEventListener('click', () => {
   const today = new Date();
   const fname = `Invoice_Shopee_${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}.xlsx`;
   XLSX.writeFile(wb, fname);
-  markStep(5);
+  markStep(4);
 });
 </script>
 </body>
