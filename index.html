@@ -314,12 +314,19 @@ let invoiceOut = [];
 let batalOut = [];
 
 // ---------- BACKEND CONFIG ----------
-// Isi 2 nilai ini dengan punya Anda dari Supabase (Project Settings → API) supaya
-// data produk tersimpan di cloud dan sinkron di semua device. Kosongkan untuk
-// pakai penyimpanan browser biasa (window.storage, hanya jalan saat dibuka lewat Claude).
+// Pilih SALAH SATU backend supaya data produk tersimpan di cloud & sinkron di semua device.
+// Isi salah satu pasangan config di bawah (Google Sheets ATAU Supabase), biarkan yang lain kosong.
+// Kalau dua-duanya kosong, otomatis pakai window.storage (hanya jalan saat dibuka lewat Claude).
+
+// Opsi A — Google Sheets (lihat panduan di google_apps_script.gs)
+const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzlD7pEeFeBIsGjlEK_A1fcn-btMZbkcq2ZmJUfh3ZNVOgfl-34LhP8FDBb0TW10spi/exec';
+const GOOGLE_SHEETS_TOKEN = 'kokiko-9f3a7c21-backend'; // string rahasia yang sama persis dengan SECRET di Apps Script
+
+// Opsi B — Supabase (lihat panduan di setup_supabase.sql)
 const SUPABASE_URL = '';        // contoh: 'https://xxxxxxx.supabase.co'
 const SUPABASE_ANON_KEY = '';   // contoh: 'eyJhbGciOi...'
 
+const hasGoogleSheets = () => !!(GOOGLE_SHEETS_URL && GOOGLE_SHEETS_TOKEN);
 const hasSupabase = () => !!(SUPABASE_URL && SUPABASE_ANON_KEY);
 const hasStorage = () => typeof window.storage !== 'undefined' && window.storage;
 
@@ -331,8 +338,55 @@ function supabaseHeaders(){
   };
 }
 
-// Generic key-value backend, table: kokiko_kv (k text primary key, v jsonb, updated_at timestamptz)
+// ---- Google Sheets backend (via Apps Script Web App) ----
+// GET pakai teknik JSONP (tag <script>) karena fetch() biasa kena CORS di Apps Script.
+function sheetsGetJSONP(key){
+  return new Promise((resolve, reject) => {
+    const cbName = 'sheetsCb_' + Math.random().toString(36).slice(2);
+    const timer = setTimeout(() => { cleanup(); reject(new Error('timeout')); }, 12000);
+    function cleanup(){
+      delete window[cbName];
+      if(script.parentNode) script.parentNode.removeChild(script);
+      clearTimeout(timer);
+    }
+    window[cbName] = (data) => { cleanup(); resolve(data); };
+    const script = document.createElement('script');
+    script.src = `${GOOGLE_SHEETS_URL}?action=get&key=${encodeURIComponent(key)}&token=${encodeURIComponent(GOOGLE_SHEETS_TOKEN)}&callback=${cbName}`;
+    script.onerror = () => { cleanup(); reject(new Error('gagal memuat script JSONP')); };
+    document.body.appendChild(script);
+  });
+}
+async function sheetsGet(key){
+  const payload = await sheetsGetJSONP(key);
+  if(payload.error) throw new Error('Sheets GET error: ' + payload.error);
+  return payload.value;
+}
+// POST pakai mode 'no-cors': browser tetap kirim request & Apps Script tetap memprosesnya,
+// hanya saja kita tidak bisa baca isi responsnya (itu tidak masalah untuk simpan/hapus data).
+async function sheetsSet(key, value){
+  await fetch(GOOGLE_SHEETS_URL, {
+    method: 'POST',
+    mode: 'no-cors',
+    headers: {'Content-Type': 'text/plain;charset=utf-8'},
+    body: JSON.stringify({action:'set', key, value, token: GOOGLE_SHEETS_TOKEN})
+  });
+  return true;
+}
+async function sheetsDelete(key){
+  await fetch(GOOGLE_SHEETS_URL, {
+    method: 'POST',
+    mode: 'no-cors',
+    headers: {'Content-Type': 'text/plain;charset=utf-8'},
+    body: JSON.stringify({action:'delete', key, token: GOOGLE_SHEETS_TOKEN})
+  });
+}
+
+// Generic key-value backend, dicoba berurutan: Google Sheets → Supabase → window.storage
 async function backendGet(key){
+  if(hasGoogleSheets()){
+    try{ return await sheetsGet(key); }
+    catch(err){ console.error('Google Sheets get error:', err); return null; }
+  }
   if(hasSupabase()){
     try{
       const res = await fetch(`${SUPABASE_URL}/rest/v1/kokiko_kv?k=eq.${encodeURIComponent(key)}&select=v`, {headers: supabaseHeaders()});
@@ -351,6 +405,10 @@ async function backendGet(key){
 }
 
 async function backendSet(key, value){
+  if(hasGoogleSheets()){
+    try{ return await sheetsSet(key, value); }
+    catch(err){ console.error('Google Sheets set error:', err); return false; }
+  }
   if(hasSupabase()){
     try{
       const res = await fetch(`${SUPABASE_URL}/rest/v1/kokiko_kv`, {
@@ -370,6 +428,10 @@ async function backendSet(key, value){
 }
 
 async function backendDelete(key){
+  if(hasGoogleSheets()){
+    try{ await sheetsDelete(key); }catch(err){ console.error('Google Sheets delete error:', err); }
+    return;
+  }
   if(hasSupabase()){
     try{
       await fetch(`${SUPABASE_URL}/rest/v1/kokiko_kv?k=eq.${encodeURIComponent(key)}`, {method:'DELETE', headers: supabaseHeaders()});
@@ -382,9 +444,10 @@ async function backendDelete(key){
 }
 
 function backendModeLabel(){
-  if(hasSupabase()) return '☁️ Tersambung ke backend (sinkron di semua device)';
+  if(hasGoogleSheets()) return '📊 Tersambung ke Google Sheets (sinkron di semua device)';
+  if(hasSupabase()) return '☁️ Tersambung ke Supabase (sinkron di semua device)';
   if(hasStorage()) return '💾 Tersimpan di browser ini saja (buka lewat Claude)';
-  return '⚠️ Belum ada backend terpasang — isi SUPABASE_URL & SUPABASE_ANON_KEY di kode supaya data tersimpan';
+  return '⚠️ Belum ada backend terpasang — isi config Google Sheets atau Supabase di kode supaya data tersimpan';
 }
 
 // ---------- persistent product-list storage ----------
