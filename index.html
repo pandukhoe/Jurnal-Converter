@@ -359,7 +359,7 @@ function sheetsGetJSONP(key){
 async function sheetsGet(key){
   const payload = await sheetsGetJSONP(key);
   if(payload.error) throw new Error('Sheets GET error: ' + payload.error);
-  return payload.value;
+  return {value: payload.value, updated_at: payload.updated_at || null};
 }
 // POST pakai mode 'no-cors': browser tetap kirim request & Apps Script tetap memprosesnya,
 // hanya saja kita tidak bisa baca isi responsnya (itu tidak masalah untuk simpan/hapus data).
@@ -370,7 +370,7 @@ async function sheetsSet(key, value){
     headers: {'Content-Type': 'text/plain;charset=utf-8'},
     body: JSON.stringify({action:'set', key, value, token: GOOGLE_SHEETS_TOKEN})
   });
-  return true;
+  return true; // respons opaque karena no-cors; waktu simpan dicatat di sisi client (lihat backendSet)
 }
 async function sheetsDelete(key){
   await fetch(GOOGLE_SHEETS_URL, {
@@ -382,49 +382,51 @@ async function sheetsDelete(key){
 }
 
 // Generic key-value backend, dicoba berurutan: Google Sheets → Supabase → window.storage
+// Mengembalikan {value, updated_at} supaya UI bisa menampilkan kapan terakhir disimpan.
 async function backendGet(key){
   if(hasGoogleSheets()){
     try{ return await sheetsGet(key); }
-    catch(err){ console.error('Google Sheets get error:', err); return null; }
+    catch(err){ console.error('Google Sheets get error:', err); return {value: null, updated_at: null}; }
   }
   if(hasSupabase()){
     try{
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/kokiko_kv?k=eq.${encodeURIComponent(key)}&select=v`, {headers: supabaseHeaders()});
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/kokiko_kv?k=eq.${encodeURIComponent(key)}&select=v,updated_at`, {headers: supabaseHeaders()});
       if(!res.ok) throw new Error('Supabase GET failed: ' + res.status);
       const rows = await res.json();
-      return rows.length ? rows[0].v : null;
-    }catch(err){ console.error('Supabase get error:', err); return null; }
+      return rows.length ? {value: rows[0].v, updated_at: rows[0].updated_at || null} : {value: null, updated_at: null};
+    }catch(err){ console.error('Supabase get error:', err); return {value: null, updated_at: null}; }
   }
   if(hasStorage()){
     try{
       const res = await window.storage.get(key, false);
-      return res && res.value ? JSON.parse(res.value) : null;
-    }catch(err){ return null; }
+      return {value: res && res.value ? JSON.parse(res.value) : null, updated_at: null};
+    }catch(err){ return {value: null, updated_at: null}; }
   }
-  return null;
+  return {value: null, updated_at: null};
 }
 
 async function backendSet(key, value){
+  const now = new Date().toISOString();
   if(hasGoogleSheets()){
-    try{ return await sheetsSet(key, value); }
-    catch(err){ console.error('Google Sheets set error:', err); return false; }
+    try{ await sheetsSet(key, value); return {ok: true, updated_at: now}; }
+    catch(err){ console.error('Google Sheets set error:', err); return {ok: false, updated_at: null}; }
   }
   if(hasSupabase()){
     try{
       const res = await fetch(`${SUPABASE_URL}/rest/v1/kokiko_kv`, {
         method: 'POST',
         headers: {...supabaseHeaders(), 'Prefer': 'resolution=merge-duplicates,return=minimal'},
-        body: JSON.stringify([{k: key, v: value, updated_at: new Date().toISOString()}])
+        body: JSON.stringify([{k: key, v: value, updated_at: now}])
       });
       if(!res.ok) throw new Error('Supabase SET failed: ' + res.status);
-      return true;
-    }catch(err){ console.error('Supabase set error:', err); return false; }
+      return {ok: true, updated_at: now};
+    }catch(err){ console.error('Supabase set error:', err); return {ok: false, updated_at: null}; }
   }
   if(hasStorage()){
-    try{ await window.storage.set(key, JSON.stringify(value), false); return true; }
-    catch(err){ console.error('window.storage set error:', err); return false; }
+    try{ await window.storage.set(key, JSON.stringify(value), false); return {ok: true, updated_at: now}; }
+    catch(err){ console.error('window.storage set error:', err); return {ok: false, updated_at: null}; }
   }
-  return false;
+  return {ok: false, updated_at: null};
 }
 
 async function backendDelete(key){
@@ -450,17 +452,45 @@ function backendModeLabel(){
   return '⚠️ Belum ada backend terpasang — isi config Google Sheets atau Supabase di kode supaya data tersimpan';
 }
 
+function formatSavedTime(iso){
+  if(!iso) return null;
+  const d = new Date(iso);
+  if(isNaN(d)) return null;
+  const pad = n => String(n).padStart(2,'0');
+  return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// Menyimpan waktu terakhir berhasil disimpan per key, untuk ditampilkan di UI.
+let lastSavedMapping = null;
+let lastSavedMaster = null;
+
 // ---------- persistent product-list storage ----------
 const STORAGE_KEY = 'kokiko-shopee-product-mapping';
 const MASTER_STORAGE_KEY = 'kokiko-shopee-jurnal-master-products';
 
-async function saveMappingToStorage(entries){ return backendSet(STORAGE_KEY, entries); }
-async function loadMappingFromStorage(){ return backendGet(STORAGE_KEY); }
-async function clearMappingStorage(){ return backendDelete(STORAGE_KEY); }
+async function saveMappingToStorage(entries){
+  const res = await backendSet(STORAGE_KEY, entries);
+  if(res.ok) lastSavedMapping = res.updated_at;
+  return res.ok;
+}
+async function loadMappingFromStorage(){
+  const res = await backendGet(STORAGE_KEY);
+  if(res.value) lastSavedMapping = res.updated_at;
+  return res.value;
+}
+async function clearMappingStorage(){ lastSavedMapping = null; return backendDelete(STORAGE_KEY); }
 
-async function saveMasterToStorage(list){ return backendSet(MASTER_STORAGE_KEY, list); }
-async function loadMasterFromStorage(){ return backendGet(MASTER_STORAGE_KEY); }
-async function clearMasterStorage(){ return backendDelete(MASTER_STORAGE_KEY); }
+async function saveMasterToStorage(list){
+  const res = await backendSet(MASTER_STORAGE_KEY, list);
+  if(res.ok) lastSavedMaster = res.updated_at;
+  return res.ok;
+}
+async function loadMasterFromStorage(){
+  const res = await backendGet(MASTER_STORAGE_KEY);
+  if(res.value) lastSavedMaster = res.updated_at;
+  return res.value;
+}
+async function clearMasterStorage(){ lastSavedMaster = null; return backendDelete(MASTER_STORAGE_KEY); }
 
 function entriesFromProductMap(){
   return Object.keys(productMap).filter(k => productMap[k]).map(k => ({orig:k, mapped:productMap[k]}));
@@ -716,15 +746,18 @@ function handleMasterFile(file){
 function renderHeaderStatus(){
   const chips = [];
   const mappedCount = entriesFromProductMap().length;
+  const mapTime = formatSavedTime(lastSavedMapping);
+  const masterTime = formatSavedTime(lastSavedMaster);
+
   if(pendingMapRows && pendingMapRows.length){
-    chips.push(`<span class="chip ok">📄 ${pendingMapRows.length} produk dipetakan<span class="rm" id="rmMapChip"> ✕</span></span>`);
+    chips.push(`<span class="chip ok">📄 ${pendingMapRows.length} produk dipetakan${mapTime ? ` · tersimpan ${mapTime}` : ''}<span class="rm" id="rmMapChip"> ✕</span></span>`);
   } else if(mappedCount){
-    chips.push(`<span class="chip ok">📄 ${mappedCount} produk dipetakan<span class="rm" id="rmMapChip"> ✕</span></span>`);
+    chips.push(`<span class="chip ok">📄 ${mappedCount} produk dipetakan${mapTime ? ` · tersimpan ${mapTime}` : ''}<span class="rm" id="rmMapChip"> ✕</span></span>`);
   } else {
     chips.push(`<span class="chip">📄 Belum ada daftar produk</span>`);
   }
   if(masterProducts.length){
-    chips.push(`<span class="chip ok">🗂️ ${masterProducts.length} produk Jurnal<span class="rm" id="rmMasterChip"> ✕</span></span>`);
+    chips.push(`<span class="chip ok">🗂️ ${masterProducts.length} produk Jurnal${masterTime ? ` · tersimpan ${masterTime}` : ''}<span class="rm" id="rmMasterChip"> ✕</span></span>`);
   } else {
     chips.push(`<span class="chip">🗂️ Belum ada data Jurnal</span>`);
   }
