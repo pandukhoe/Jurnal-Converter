@@ -123,6 +123,14 @@
   .tablewrap thead th{position:sticky; top:0; background:#fbfaf7; z-index:1;}
 
   .maprow input{padding:6px 9px; font-size:12.5px;}
+  .suggest-chips{display:flex; flex-wrap:wrap; gap:5px; margin-top:6px;}
+  .suggest-chip{
+    appearance:none; border:1px solid var(--line); background:#fdfcfa; color:var(--ink-soft);
+    font-size:11px; padding:3px 9px; border-radius:100px; cursor:pointer; font-family:inherit;
+    max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    transition: all .12s ease;
+  }
+  .suggest-chip:hover{ border-color:var(--shopee); color:var(--shopee-dark); background:#fff6f4; }
   .maprow td{padding:5px 8px;}
   .tag{display:inline-block; font-size:10px; font-weight:700; padding:2px 7px; border-radius:100px;}
   .tag.warn{background:var(--warn-bg); color:var(--warn);}
@@ -536,18 +544,37 @@ function normTokens(s){
   return t.split(/\s+/).map(w => w.replace(/\.+$/,'')).filter(Boolean);
 }
 function bestMasterMatch(origName){
+  const matches = topMasterMatches(origName, 1, 0.65);
+  return matches.length ? matches[0] : null;
+}
+
+// Mengembalikan beberapa kandidat produk paling mirip (untuk ditampilkan sebagai pilihan klik),
+// diurutkan dari yang paling mirip. minScore lebih rendah dari bestMasterMatch supaya opsi lebih beragam.
+function topMasterMatches(origName, topN = 4, minScore = 0.4){
   const origTokens = new Set(normTokens(origName));
-  if(!origTokens.size) return null;
-  let best = null, bestScore = 0;
+  if(!origTokens.size || !masterProducts.length) return [];
+  const scored = [];
   masterProducts.forEach(p => {
     const tks = normTokens(p.nama);
     if(!tks.length) return;
     const overlap = tks.filter(t => origTokens.has(t)).length;
-    const score = overlap / tks.length; // recall against the (shorter, canonical) master name
-    const strongEnough = tks.length === 1 ? overlap === 1 : score >= 0.65 && overlap >= 2;
-    if(strongEnough && score > bestScore){ bestScore = score; best = p; }
+    if(overlap === 0) return;
+    const score = overlap / tks.length; // recall terhadap nama master (biasanya lebih pendek/baku)
+    if(tks.length === 1 && overlap < 1) return;
+    if(score < minScore) return;
+    scored.push({...p, score});
   });
-  return best;
+  scored.sort((a, b) => b.score - a.score);
+  // buang duplikat nama persis, ambil topN
+  const seen = new Set();
+  const out = [];
+  for(const item of scored){
+    if(seen.has(item.nama)) continue;
+    seen.add(item.nama);
+    out.push(item);
+    if(out.length >= topN) break;
+  }
+  return out;
 }
 
 function renderMasterDatalist(){
@@ -648,9 +675,16 @@ function renderMapTable(){
     const tr = document.createElement('tr');
     tr.className = 'maprow';
     const mapped = productMap[orig];
+    const suggestions = masterProducts.length ? topMasterMatches(orig, 4, 0.4) : [];
+    const chipsHtml = suggestions.length
+      ? `<div class="suggest-chips">${suggestions.map(s => `<button type="button" class="suggest-chip" data-orig="${escapeAttr(orig)}" data-nama="${escapeAttr(s.nama)}" title="Kecocokan ~${Math.round(s.score*100)}%">${escapeHtml(s.nama)}</button>`).join('')}</div>`
+      : '';
     tr.innerHTML = `
       <td>${escapeHtml(orig)}</td>
-      <td><input type="text" list="masterProductList" data-orig="${escapeAttr(orig)}" value="${escapeAttr(mapped)}" placeholder="nama sesuai template..."></td>
+      <td>
+        <input type="text" list="masterProductList" data-orig="${escapeAttr(orig)}" value="${escapeAttr(mapped)}" placeholder="nama sesuai template...">
+        ${chipsHtml}
+      </td>
       <td>${mapped ? '<span class="tag ok">Terisi</span>' : '<span class="tag warn">Belum diisi</span>'}</td>
     `;
     tbody.appendChild(tr);
@@ -665,6 +699,16 @@ function renderMapTable(){
       processAndRender();
       clearTimeout(saveTimer);
       saveTimer = setTimeout(() => persistCurrentMapping(), 600);
+    });
+  });
+  tbody.querySelectorAll('.suggest-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const orig = btn.dataset.orig;
+      const nama = btn.dataset.nama;
+      productMap[orig] = nama;
+      renderMapTable();
+      processAndRender();
+      persistCurrentMapping();
     });
   });
 }
